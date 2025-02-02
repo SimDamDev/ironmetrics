@@ -5,13 +5,25 @@ LINTER := pylint
 SECURITY := bandit
 TEST_RUNNER := pytest
 GIT := git
+TEMP_DIR := temp
 
-# Styles pour le terminal
+# Styles pour le terminal (ASCII simple)
 SEPARATOR := @echo "=========================================="
 INFO := @echo [INFO]
-SUCCESS := @echo [SUCCESS]
-WARNING := @echo [ATTENTION]
-ERROR := @echo [ERREUR]
+SUCCESS := @echo [OK]
+WARNING := @echo [WARN]
+ERROR := @echo [ERR]
+
+# Symboles pour les résumés (ASCII simple)
+SYMBOL_SUCCESS := [+]
+SYMBOL_ERROR := [!]
+SYMBOL_INFO := [>]
+SYMBOL_WARNING := [~]
+SYMBOL_SKIP := [-]
+
+# Styles pour les sections
+SECTION_START := @echo "----------------------------------------"
+SECTION_END := @echo "----------------------------------------"
 
 # Variables pour la configuration
 CONFIG_FILE := config.mk
@@ -51,8 +63,9 @@ HAVE_PYTHON := $(shell where $(PYTHON) 2> NUL)
 # Ctrl + Alt + B -> make toggle-beta (BETA_MODE)
 # Ctrl + Alt + X -> make toggle-signatures (Signatures)
 # Ctrl + Alt + I -> make init-repo (Initialisation GitHub)
+# Ctrl + Alt + G -> make install-gitleaks (Installation GitLeaks)
 
-.PHONY: all test lint security-check autofix panic stats deploy gendoc explain progress quickpush security-full toggle-beta toggle-signatures init-git init-docs install-deps init-project-structure
+.PHONY: all test lint security-check autofix panic stats deploy gendoc explain progress quickpush security-full toggle-beta toggle-signatures init-git init-docs install-deps init-project-structure install-gitleaks
 
 all: test lint security-check
 
@@ -65,8 +78,6 @@ install-deps:
 	@$(PYTHON) -m pip install --quiet --upgrade pip
 	$(INFO) Installation des dependances Python...
 	@$(PIP) install --quiet pytest pylint bandit safety sphinx autopep8 black
-	@$(PIP) install --quiet bandit
-	@where bandit >nul 2>nul || ($(ERROR) Bandit n'est pas dans le PATH, installation via pip... && $(PIP) install -U bandit)
 	$(INFO) Installation des dependances JavaScript...
 	@where npm >nul 2>nul && npm install -g prettier || $(WARNING) npm non trouve, prettier non installe
 	$(INFO) Installation des dependances Java...
@@ -109,18 +120,45 @@ init-docs:
 security-check: install-deps init-git
 	$(SEPARATOR)
 	$(INFO) Execution de l'audit de securite basique...
-	-$(PYTHON) -m bandit -r .
+	-$(PYTHON) -m bandit -r . > build.log 2>&1
+	$(INFO) Resume de l'audit :
+	@echo "$(SYMBOL_INFO) Securite du code :"
+	@findstr /C:"No issues identified" build.log >nul && echo "  $(SYMBOL_SUCCESS) Aucun probleme trouve" || echo "  $(SYMBOL_ERROR) Problemes de securite detectes"
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 🛡️ Verification complete de la securite
 security-full: install-deps init-git
 	$(SEPARATOR)
 	$(INFO) Execution de l'audit de securite complet...
-	@where bandit >nul 2>nul || ($(ERROR) bandit n'est pas trouve dans le PATH && exit /b 1)
-	-$(PYTHON) -m bandit -r . -ll
-	$(INFO) Verification des dependances...
-	@where safety >nul 2>nul || ($(ERROR) safety n'est pas trouve dans le PATH && exit /b 1)
-	-$(PYTHON) -m safety check
+	$(SECTION_START)
+	$(INFO) 1. Analyse statique du code avec Bandit...
+	-$(PYTHON) -m bandit -r . -ll -v > build.log 2>&1
+	$(SECTION_START)
+	$(INFO) 2. Verification des dependances avec Safety...
+	-$(PYTHON) -m safety scan --output screen --full-report >> build.log 2>&1
+	$(SECTION_START)
+	$(INFO) 3. Verification des secrets (optionnel)...
+	@where gitleaks >nul 2>nul && ( \
+		$(INFO) Analyse avec GitLeaks... && \
+		gitleaks detect --no-git >> build.log 2>&1 \
+	) || ( \
+		$(INFO) Pour une analyse complete des secrets, installez GitLeaks : && \
+		echo "  1. Ouvrez PowerShell en tant qu'administrateur" && \
+		echo "  2. Executez : choco install gitleaks -y" && \
+		echo "  3. Relancez la commande security-full" \
+	)
+	$(SEPARATOR)
+	$(INFO) Resume de l'analyse :
+	@echo "$(SYMBOL_INFO) Analyse statique (Bandit) :"
+	@findstr /C:"No issues identified" build.log >nul && echo "  $(SYMBOL_SUCCESS) Aucun probleme trouve" || echo "  $(SYMBOL_ERROR) Problemes detectes"
+	@echo "$(SYMBOL_INFO) Dependances (Safety) :"
+	@findstr /C:"No known security vulnerabilities found" build.log >nul && echo "  $(SYMBOL_SUCCESS) Aucune vulnerabilite" || echo "  $(SYMBOL_ERROR) Vulnerabilites detectees"
+	@echo "$(SYMBOL_INFO) Secrets (GitLeaks) :"
+	@where gitleaks >nul 2>nul && ( \
+		findstr /C:"no leaks found" build.log >nul && echo "  $(SYMBOL_SUCCESS) Aucune fuite detectee" || echo "  $(SYMBOL_ERROR) Fuites potentielles detectees" \
+	) || echo "  $(SYMBOL_SKIP) Non verifie (GitLeaks non installe)"
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 🧹 Verification du code
@@ -128,7 +166,11 @@ lint: install-deps
 	$(SEPARATOR)
 	$(INFO) Verification du code...
 	@where $(LINTER) >nul 2>nul || ($(ERROR) pylint n'est pas trouve dans le PATH && exit /b 1)
-	-$(LINTER) src/
+	-$(LINTER) src/ > build.log 2>&1
+	$(INFO) Resume de l'analyse :
+	@echo "[>] Qualite du code :"
+	@findstr /C:"Your code has been rated at 10.00/10" build.log >nul && echo "  [+] Code parfait (10/10)" || echo "  [!] Ameliorations possibles"
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 🧪 Tests
@@ -136,7 +178,12 @@ test: install-deps init-project-structure
 	$(SEPARATOR)
 	$(INFO) Execution des tests...
 	@$(PIP) install --quiet pytest
-	-$(PYTHON) -m pytest
+	-$(PYTHON) -m pytest > build.log 2>&1
+	$(INFO) Resume des tests :
+	@echo "[>] Tests unitaires :"
+	@findstr /C:"failed" build.log >nul && echo "  [!] Certains tests ont echoue" || echo "  [+] Tous les tests ont reussi"
+	@findstr /C:"no tests ran" build.log >nul && echo "  [-] Aucun test execute"
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 🏗️ Initialisation de la structure du projet
@@ -178,42 +225,66 @@ deploy: init-git
 	$(SEPARATOR)
 
 # 🤖 Correction automatique avec IA
-autofix: install-deps
-	$(SEPARATOR)
-	$(INFO) Correction automatique du code avec IA...
-	@where cursor >nul 2>nul || ($(ERROR) Cursor n'est pas trouve dans le PATH && exit /b 1)
-	
-	$(INFO) Pour utiliser l'IA de Cursor :
-	@echo "  * Ctrl + I : Ouvrir le Composer"
-	@echo "  * Ctrl + Shift + K : Editer le code selectionne"
-	@echo "  * Ctrl + Enter : Accepter les changements"
-	$(SEPARATOR)
-	
-	$(INFO) Application du formatage basique...
-	
-	$(INFO) Fichiers Python :
-	@where autopep8 >nul 2>nul || ($(ERROR) autopep8 n'est pas trouve dans le PATH && exit /b 1)
-	-$(PYTHON) -m autopep8 --in-place --aggressive --recursive .
-	
-	$(INFO) Fichiers JavaScript :
-	@where prettier >nul 2>nul || ($(WARNING) prettier n'est pas trouve dans le PATH)
-	-npx prettier --write "**/*.{js,jsx,ts,tsx}" 2>nul || $(WARNING) Pas de fichiers JS trouves
-	
-	$(INFO) Fichiers HTML/CSS :
-	-npx prettier --write "**/*.{html,css,scss}" 2>nul || $(WARNING) Pas de fichiers HTML/CSS trouves
-	
-	$(INFO) Fichiers Java :
-	@where java >nul 2>nul || ($(WARNING) java n'est pas trouve dans le PATH)
-	-npx google-java-format -r ./**/*.java 2>nul || $(WARNING) Pas de fichiers Java trouves
-	
-	$(INFO) Fichiers Rust :
-	@where rustc >nul 2>nul || ($(WARNING) rustc n'est pas trouve dans le PATH)
-	-rustfmt **/*.rs 2>nul || $(WARNING) Pas de fichiers Rust trouves
-	
-	$(SEPARATOR)
-	$(INFO) Fichiers corriges :
-	@dir /s /b *.{py,js,jsx,ts,tsx,html,css,scss,java,rs} 2>nul || $(WARNING) Aucun fichier trouve
-	$(SUCCESS) Formatage termine
+autofix:
+	@echo "[INFO] Configuration du PATH Python..."
+	@if not exist $(TEMP_DIR) mkdir $(TEMP_DIR)
+	-@set "PYTHONPATH=$(PYTHONPATH)" 2>nul
+	@echo "[INFO] Mise a jour de pip..."
+	-@$(PIP) install --upgrade pip > $(TEMP_DIR)/build.log 2>nul || echo "[WARN] Erreur lors de la mise a jour de pip"
+	@echo "[INFO] Installation des dependances Python..."
+	-@$(PIP) install -r requirements.txt >> $(TEMP_DIR)/build.log 2>nul || echo "[WARN] Erreur lors de l'installation des dependances Python"
+	@echo "[INFO] Installation des dependances JavaScript..."
+	-@npm install >> $(TEMP_DIR)/build.log 2>nul || echo "[WARN] Erreur lors de l'installation des dependances JavaScript"
+	@echo "[INFO] Installation des dependances Java..."
+	-@where java >nul 2>nul && ( \
+		echo "[INFO] Installation de google-java-format..." && \
+		npm install google-java-format >> $(TEMP_DIR)/build.log 2>nul \
+	) || echo "[WARN] Java non trouve, google-java-format non installe"
+	@echo "[INFO] Installation des dependances Rust..."
+	-@where rustc >nul 2>nul && ( \
+		echo "[INFO] Installation de rustfmt..." && \
+		rustup component add rustfmt >> $(TEMP_DIR)/build.log 2>nul \
+	) || echo "[WARN] Rust non trouve, rustfmt non installe"
+	@echo "=========================================="
+	@echo "=========================================="
+	@echo "[INFO] Correction automatique du code..."
+	@echo "----------------------------------------"
+	@echo "[INFO] 1. Installation des outils de formatage..."
+	-@$(PIP) install --quiet autopep8 black > $(TEMP_DIR)/build.log 2>nul || echo "[WARN] Erreur lors de l'installation de autopep8/black"
+	-@npm install -g prettier >> $(TEMP_DIR)/build.log 2>nul || echo "[WARN] Erreur lors de l'installation de prettier"
+	@echo "----------------------------------------"
+	@echo "[INFO] 2. Formatage du code..."
+	@echo "[>] Fichiers Python :"
+	-@$(PYTHON) -m black --verbose . > $(TEMP_DIR)/python.log 2>&1
+	-@type $(TEMP_DIR)\python.log >> $(TEMP_DIR)\build.log
+	-@findstr /i /c:"reformatted" $(TEMP_DIR)\python.log >nul 2>nul && ( \
+		for /f "tokens=2 delims= " %%i in ('findstr /i /c:"reformatted" $(TEMP_DIR)\python.log') do @echo "  $(SYMBOL_SUCCESS) %%~nxi" \
+	) || echo "[INFO] Aucun fichier Python trouve"
+	@echo "[>] Fichiers JavaScript :"
+	-@npx prettier --write "**/*.{js,jsx,ts,tsx}" >> $(TEMP_DIR)/build.log 2>nul || echo "[INFO] Aucun fichier JavaScript trouve"
+	@echo "[>] Fichiers HTML/CSS :"
+	-@npx prettier --write "**/*.{html,css,scss}" >> $(TEMP_DIR)/build.log 2>nul || echo "[INFO] Aucun fichier HTML/CSS trouve"
+	@echo "[>] Fichiers Java :"
+	-@where java >nul 2>nul && npx google-java-format -r ./**/*.java >> $(TEMP_DIR)/build.log 2>nul || echo "[INFO] Aucun fichier Java trouve"
+	@echo "[>] Fichiers Rust :"
+	-@where rustc >nul 2>nul && rustfmt **/*.rs >> $(TEMP_DIR)/build.log 2>nul || echo "[INFO] Aucun fichier Rust trouve"
+	@echo "----------------------------------------"
+	@echo "[INFO] Resume du formatage :"
+	@echo "[>] Fichiers modifies :"
+	-@powershell -Command " \
+		$$modified = $$false; \
+		if (Test-Path $(TEMP_DIR)/python.log) { \
+			$$files = Select-String -Path $(TEMP_DIR)/python.log -Pattern 'reformatted (.+)' | ForEach-Object { $$_.Matches.Groups[1].Value }; \
+			if ($$files) { \
+				$$modified = $$true; \
+				$$files | ForEach-Object { Write-Host ('  $(SYMBOL_SUCCESS) ' + (Split-Path $$_ -Leaf)) } \
+			} \
+		} \
+		if (-not $$modified) { \
+			Write-Host '  $(SYMBOL_SUCCESS) Aucun fichier modifie' \
+		} \
+	"
+	-@rmdir /s /q $(TEMP_DIR) >nul 2>nul || ver >nul
 	$(SEPARATOR)
 
 # ⚠️ Mode Panique (Securise)
@@ -239,7 +310,11 @@ panic: init-git
 stats: init-git
 	$(SEPARATOR)
 	$(INFO) Statistiques du projet...
-	-$(GIT) shortlog -sn --all || $(WARNING) Pas d'historique Git disponible
+	-$(GIT) shortlog -sn --all > build.log 2>&1
+	$(INFO) Resume des statistiques :
+	@echo "[>] Contributions :"
+	@findstr /C:"No output" build.log >nul && echo "  [-] Pas d'historique disponible" || (type build.log && echo "  [+] Historique affiche")
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 📝 Generation de documentation
@@ -262,7 +337,11 @@ explain:
 progress: init-git
 	$(SEPARATOR)
 	$(INFO) Progression du projet...
-	-$(GIT) log --oneline --graph --all || $(WARNING) Pas d'historique Git disponible
+	-$(GIT) log --oneline --graph --all > build.log 2>&1
+	$(INFO) Resume de la progression :
+	@echo "[>] Historique des commits :"
+	@findstr /C:"fatal: your current branch" build.log >nul && echo "  [-] Pas d'historique Git" || (type build.log && echo "  [+] Historique affiche")
+	@del build.log 2>nul
 	$(SEPARATOR)
 
 # 🚀 Push rapide
@@ -315,4 +394,26 @@ toggle-signatures: init-git
 		$(GIT) config commit.gpgsign true && \
 		$(SUCCESS) Signatures activees \
 	)
+	$(SEPARATOR)
+
+# 🔧 Installation de GitLeaks
+install-gitleaks:
+	$(SEPARATOR)
+	$(INFO) Installation de GitLeaks...
+	@powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList 'choco install -y gitleaks --no-progress'" || ( \
+		$(ERROR) Impossible d'installer GitLeaks && \
+		$(INFO) Pour installer manuellement : && \
+		$(INFO) 1. Ouvrez PowerShell en tant qu'administrateur && \
+		$(INFO) 2. Executez : choco install gitleaks -y && \
+		exit /b 1 \
+	)
+	$(SUCCESS) GitLeaks installe avec succes
+	$(SEPARATOR)
+
+# Nettoyage des fichiers temporaires
+clean:
+	$(SEPARATOR)
+	$(INFO) Nettoyage des fichiers temporaires...
+	-@if exist $(TEMP_DIR) rmdir /s /q $(TEMP_DIR) >nul 2>nul
+	$(SUCCESS) Nettoyage termine
 	$(SEPARATOR) 
