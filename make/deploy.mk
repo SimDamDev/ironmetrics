@@ -36,6 +36,9 @@ init-repo: init-git
 		} else { \
 			Write-Host '[OK] Remote origin deja configure'; \
 		} \
+		Write-Host '[INFO] Nettoyage de la configuration de la branche...'; \
+		git config --local --unset-all branch.main.remote 2>$$null; \
+		git config --local --unset-all branch.main.merge 2>$$null; \
 		Write-Host '[INFO] Configuration de la branche principale...'; \
 		git branch -M main; \
 		Write-Host '[INFO] Verification des modifications...'; \
