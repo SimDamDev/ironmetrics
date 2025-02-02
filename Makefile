@@ -50,6 +50,7 @@ HAVE_PYTHON := $(shell where $(PYTHON) 2> NUL)
 # Ctrl + Alt + S -> make security-full (Verification complete)
 # Ctrl + Alt + B -> make toggle-beta (BETA_MODE)
 # Ctrl + Alt + X -> make toggle-signatures (Signatures)
+# Ctrl + Alt + I -> make init-repo (Initialisation GitHub)
 
 .PHONY: all test lint security-check autofix panic stats deploy gendoc explain progress quickpush security-full toggle-beta toggle-signatures init-git init-docs install-deps init-project-structure
 
@@ -80,6 +81,21 @@ init-git:
 	$(INFO) Initialisation de Git...
 	@where git >nul 2>nul || ($(ERROR) Git n'est pas installe ! Executez 'make install-system-tools' && exit /b 1)
 	@if not exist .git ($(GIT) init) else ($(SUCCESS) Git deja initialise)
+	$(SEPARATOR)
+
+# 🚀 Initialisation du dépôt GitHub
+init-repo: init-git
+	$(SEPARATOR)
+	$(INFO) Configuration du dépôt GitHub...
+	@if not exist .git\config ($(ERROR) Git n'est pas initialise && exit /b 1)
+	@$(GIT) config --local user.name "SimDamDev" || ($(ERROR) Impossible de configurer le nom d'utilisateur && exit /b 1)
+	@$(GIT) config --local user.email "contact@simdam.ch" || ($(ERROR) Impossible de configurer l'email && exit /b 1)
+	@$(GIT) remote -v | findstr origin >nul || ($(INFO) Ajout du remote origin... && $(GIT) remote add origin https://github.com/SimDamDev/ironmetrics.git)
+	@$(GIT) branch -M main
+	@$(GIT) add .
+	@$(GIT) commit -m "Initial commit" || $(SUCCESS) Rien a commiter
+	@$(GIT) push -u origin main || ($(WARNING) Impossible de pousser vers GitHub, verifiez vos droits d'acces)
+	$(SUCCESS) Dépôt GitHub configuré
 	$(SEPARATOR)
 
 init-docs:
