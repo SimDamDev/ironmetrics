@@ -9,16 +9,53 @@ init-git:
 # 🚀 Initialisation du dépôt GitHub
 init-repo: init-git
 	$(SEPARATOR)
-	$(INFO) Configuration du dépôt GitHub...
-	@if not exist .git\config ($(ERROR) Git n'est pas initialise && exit /b 1)
-	@$(GIT) config --local user.name "SimDamDev" || ($(ERROR) Impossible de configurer le nom d'utilisateur && exit /b 1)
-	@$(GIT) config --local user.email "contact@simdam.ch" || ($(ERROR) Impossible de configurer l'email && exit /b 1)
-	@$(GIT) remote -v | findstr origin >nul || ($(INFO) Ajout du remote origin... && $(GIT) remote add origin https://github.com/SimDamDev/ironmetrics.git)
-	@$(GIT) branch -M main
-	@$(GIT) add .
-	@$(GIT) commit -m "Initial commit" || $(SUCCESS) Rien a commiter
-	@$(GIT) push -u origin main || ($(WARNING) Impossible de pousser vers GitHub, verifiez vos droits d'acces)
-	$(SUCCESS) Dépôt GitHub configuré
+	$(INFO) Configuration du depot GitHub...
+	@powershell -Command " \
+		Write-Host '[INFO] Verification de la configuration Git...'; \
+		if (-not (Test-Path .git\config)) { \
+			Write-Host '[ERROR] Git n''est pas initialise'; \
+			exit 1; \
+		} \
+		Write-Host '[INFO] Configuration du nom d''utilisateur...'; \
+		git config --local user.name 'SimDamDev'; \
+		if (-not $$?) { \
+			Write-Host '[ERROR] Impossible de configurer le nom d''utilisateur'; \
+			exit 1; \
+		} \
+		Write-Host '[INFO] Configuration de l''email...'; \
+		git config --local user.email 'contact@simdam.ch'; \
+		if (-not $$?) { \
+			Write-Host '[ERROR] Impossible de configurer l''email'; \
+			exit 1; \
+		} \
+		Write-Host '[INFO] Verification du remote origin...'; \
+		$$remote = git remote -v | Select-String 'origin'; \
+		if (-not $$remote) { \
+			Write-Host '[INFO] Ajout du remote origin...'; \
+			git remote add origin https://github.com/SimDamDev/ironmetrics.git; \
+		} else { \
+			Write-Host '[OK] Remote origin deja configure'; \
+		} \
+		Write-Host '[INFO] Configuration de la branche principale...'; \
+		git branch -M main; \
+		Write-Host '[INFO] Verification des modifications...'; \
+		$$status = git status --porcelain; \
+		if ($$status) { \
+			Write-Host '[INFO] Modifications detectees :'; \
+			Write-Host $$status; \
+			git add .; \
+			git commit -m 'Initial commit'; \
+		} else { \
+			Write-Host '[OK] Rien a commiter'; \
+		} \
+		Write-Host '[INFO] Configuration de la branche upstream...'; \
+		git push -u origin main; \
+		if ($$?) { \
+			Write-Host '[OK] Depot GitHub configure avec succes'; \
+		} else { \
+			Write-Host '[WARN] Impossible de pousser vers GitHub, verifiez vos droits d''acces'; \
+		} \
+	" || $(ERROR) Erreur lors de la configuration du depot
 	$(SEPARATOR)
 
 # 🚀 Deploiement

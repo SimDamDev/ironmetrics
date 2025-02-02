@@ -38,4 +38,3 @@ all: test lint security-check
 # Ctrl + Alt + B -> make toggle-beta (BETA_MODE)
 # Ctrl + Alt + X -> make toggle-signatures (Signatures)
 # Ctrl + Alt + I -> make init-repo (Initialisation GitHub)
-# Ctrl + Alt + G -> make install-gitleaks (Installation GitLeaks) 
