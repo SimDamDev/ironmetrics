@@ -13,6 +13,11 @@ SUCCESS := @echo [SUCCESS]
 WARNING := @echo [ATTENTION]
 ERROR := @echo [ERREUR]
 
+# Variables pour la configuration
+CONFIG_FILE := config.mk
+BETA_MODE := $(shell if exist $(CONFIG_FILE) (findstr "BETA_MODE=1" $(CONFIG_FILE)) else (echo))
+SIGNATURES_MODE := $(shell if exist $(CONFIG_FILE) (findstr "SIGNATURES=1" $(CONFIG_FILE)) else (echo))
+
 # 🔧 Installation des outils systeme
 install-system-tools:
 	$(SEPARATOR)
@@ -46,13 +51,17 @@ HAVE_PYTHON := $(shell where $(PYTHON) 2> NUL)
 # Ctrl + Alt + B -> make toggle-beta (BETA_MODE)
 # Ctrl + Alt + X -> make toggle-signatures (Signatures)
 
-.PHONY: all test lint security-check autofix panic stats deploy gendoc explain progress quickpush security-full toggle-beta toggle-signatures init-git init-docs install-deps
+.PHONY: all test lint security-check autofix panic stats deploy gendoc explain progress quickpush security-full toggle-beta toggle-signatures init-git init-docs install-deps init-project-structure
 
 all: test lint security-check
 
 # 🔧 Installation des dependances
 install-deps:
 	$(SEPARATOR)
+	$(INFO) Configuration du PATH Python...
+	@powershell -Command "[Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH', 'User') + ';%APPDATA%\Python\Python313\Scripts', 'User')"
+	$(INFO) Mise a jour de pip...
+	@$(PYTHON) -m pip install --quiet --upgrade pip
 	$(INFO) Installation des dependances Python...
 	@$(PIP) install --quiet pytest pylint bandit safety sphinx autopep8 black
 	@$(PIP) install --quiet bandit
@@ -91,31 +100,64 @@ security-check: install-deps init-git
 security-full: install-deps init-git
 	$(SEPARATOR)
 	$(INFO) Execution de l'audit de securite complet...
-	-$(SECURITY) -r . -ll
+	@where bandit >nul 2>nul || ($(ERROR) bandit n'est pas trouve dans le PATH && exit /b 1)
+	-$(PYTHON) -m bandit -r . -ll
 	$(INFO) Verification des dependances...
-	-safety check
+	@where safety >nul 2>nul || ($(ERROR) safety n'est pas trouve dans le PATH && exit /b 1)
+	-$(PYTHON) -m safety check
 	$(SEPARATOR)
 
 # 🧹 Verification du code
 lint: install-deps
 	$(SEPARATOR)
 	$(INFO) Verification du code...
+	@where $(LINTER) >nul 2>nul || ($(ERROR) pylint n'est pas trouve dans le PATH && exit /b 1)
 	-$(LINTER) src/
 	$(SEPARATOR)
 
 # 🧪 Tests
-test: install-deps
+test: install-deps init-project-structure
 	$(SEPARATOR)
 	$(INFO) Execution des tests...
-	-$(TEST_RUNNER)
+	@$(PIP) install --quiet pytest
+	-$(PYTHON) -m pytest
+	$(SEPARATOR)
+
+# 🏗️ Initialisation de la structure du projet
+init-project-structure:
+	$(SEPARATOR)
+	$(INFO) Verification de la structure du projet...
+	@if not exist src ( \
+		$(INFO) Creation du dossier src... && \
+		mkdir src && \
+		powershell -Command "Set-Content -Path 'src/__init__.py' -Value '# Fichier principal du projet'" && \
+		$(SUCCESS) Dossier src cree \
+	)
+	@if not exist tests ( \
+		$(INFO) Creation du dossier tests... && \
+		mkdir tests && \
+		powershell -Command "Set-Content -Path 'tests/__init__.py' -Value 'import pytest'" && \
+		powershell -Command "$$content = @('def test_example():', '    assert True'); Set-Content -Path 'tests/test_example.py' -Value $$content" && \
+		$(SUCCESS) Dossier tests cree avec un test exemple \
+	)
+	@if not exist requirements.txt ( \
+		$(INFO) Creation du fichier requirements.txt... && \
+		powershell -Command "$$content = @('pytest', 'pylint', 'bandit', 'safety', 'sphinx', 'autopep8', 'black'); Set-Content -Path 'requirements.txt' -Value $$content" && \
+		$(SUCCESS) Fichier requirements.txt cree \
+	)
+	@if not exist README.md ( \
+		$(INFO) Creation du fichier README.md... && \
+		powershell -Command "$$content = @('# IronMetrics', '', '## Installation', '', '```bash', 'pip install -r requirements.txt', '```'); Set-Content -Path 'README.md' -Value $$content" && \
+		$(SUCCESS) Fichier README.md cree \
+	)
 	$(SEPARATOR)
 
 # 🚀 Deploiement
 deploy: init-git
 	$(SEPARATOR)
 	$(INFO) Deploiement...
-	@where docker >nul 2>nul || ($(ERROR) Docker n'est pas installe ! && exit /b 1)
-	@where docker-compose >nul 2>nul || ($(ERROR) Docker Compose n'est pas installe ! && exit /b 1)
+	@where docker >nul 2>nul || ($(ERROR) Docker n'est pas trouve dans le PATH && exit /b 1)
+	@where docker-compose >nul 2>nul || ($(ERROR) Docker Compose n'est pas trouve dans le PATH && exit /b 1)
 	-$(GIT) pull origin main && docker-compose up -d --build
 	$(SEPARATOR)
 
@@ -123,7 +165,7 @@ deploy: init-git
 autofix: install-deps
 	$(SEPARATOR)
 	$(INFO) Correction automatique du code avec IA...
-	@where cursor >nul 2>nul || ($(ERROR) Cursor CLI n'est pas installe ! && exit /b 1)
+	@where cursor >nul 2>nul || ($(ERROR) Cursor n'est pas trouve dans le PATH && exit /b 1)
 	
 	$(INFO) Pour utiliser l'IA de Cursor :
 	@echo "  * Ctrl + I : Ouvrir le Composer"
@@ -133,19 +175,23 @@ autofix: install-deps
 	
 	$(INFO) Application du formatage basique...
 	
-	$(INFO) Python files:
+	$(INFO) Fichiers Python :
+	@where autopep8 >nul 2>nul || ($(ERROR) autopep8 n'est pas trouve dans le PATH && exit /b 1)
 	-$(PYTHON) -m autopep8 --in-place --aggressive --recursive .
 	
-	$(INFO) JavaScript files:
+	$(INFO) Fichiers JavaScript :
+	@where prettier >nul 2>nul || ($(WARNING) prettier n'est pas trouve dans le PATH)
 	-npx prettier --write "**/*.{js,jsx,ts,tsx}" 2>nul || $(WARNING) Pas de fichiers JS trouves
 	
-	$(INFO) HTML/CSS files:
+	$(INFO) Fichiers HTML/CSS :
 	-npx prettier --write "**/*.{html,css,scss}" 2>nul || $(WARNING) Pas de fichiers HTML/CSS trouves
 	
-	$(INFO) Java files:
+	$(INFO) Fichiers Java :
+	@where java >nul 2>nul || ($(WARNING) java n'est pas trouve dans le PATH)
 	-npx google-java-format -r ./**/*.java 2>nul || $(WARNING) Pas de fichiers Java trouves
 	
-	$(INFO) Rust files:
+	$(INFO) Fichiers Rust :
+	@where rustc >nul 2>nul || ($(WARNING) rustc n'est pas trouve dans le PATH)
 	-rustfmt **/*.rs 2>nul || $(WARNING) Pas de fichiers Rust trouves
 	
 	$(SEPARATOR)
@@ -214,12 +260,43 @@ quickpush: init-git
 toggle-beta:
 	$(SEPARATOR)
 	$(INFO) Modification du mode BETA...
-	@echo "Pour implementer: modifier le fichier de configuration"
+	@if exist $(CONFIG_FILE) ( \
+		findstr /C:"BETA_MODE=1" $(CONFIG_FILE) >nul && ( \
+			$(INFO) Desactivation du mode BETA... && \
+			powershell -Command "(Get-Content $(CONFIG_FILE)) -replace 'BETA_MODE=1', 'BETA_MODE=0' | Set-Content $(CONFIG_FILE)" && \
+			$(SUCCESS) Mode BETA desactive \
+		) || ( \
+			$(INFO) Activation du mode BETA... && \
+			powershell -Command "(Get-Content $(CONFIG_FILE)) -replace 'BETA_MODE=0', 'BETA_MODE=1' | Set-Content $(CONFIG_FILE)" && \
+			$(SUCCESS) Mode BETA active \
+		) \
+	) else ( \
+		$(INFO) Creation du fichier de configuration... && \
+		echo BETA_MODE=1 > $(CONFIG_FILE) && \
+		$(SUCCESS) Mode BETA active \
+	)
 	$(SEPARATOR)
 
 # 🔓 Toggle Signatures
-toggle-signatures:
+toggle-signatures: init-git
 	$(SEPARATOR)
 	$(INFO) Modification des signatures...
-	@echo "Pour implementer: modifier les parametres de securite"
+	@if exist $(CONFIG_FILE) ( \
+		findstr /C:"SIGNATURES=1" $(CONFIG_FILE) >nul && ( \
+			$(INFO) Desactivation des signatures... && \
+			powershell -Command "(Get-Content $(CONFIG_FILE)) -replace 'SIGNATURES=1', 'SIGNATURES=0' | Set-Content $(CONFIG_FILE)" && \
+			$(GIT) config commit.gpgsign false && \
+			$(SUCCESS) Signatures desactivees \
+		) || ( \
+			$(INFO) Activation des signatures... && \
+			powershell -Command "(Get-Content $(CONFIG_FILE)) -replace 'SIGNATURES=0', 'SIGNATURES=1' | Set-Content $(CONFIG_FILE)" && \
+			$(GIT) config commit.gpgsign true && \
+			$(SUCCESS) Signatures activees \
+		) \
+	) else ( \
+		$(INFO) Creation du fichier de configuration... && \
+		echo SIGNATURES=1 >> $(CONFIG_FILE) && \
+		$(GIT) config commit.gpgsign true && \
+		$(SUCCESS) Signatures activees \
+	)
 	$(SEPARATOR) 

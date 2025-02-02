@@ -1,0 +1,7 @@
+pytest
+pylint
+bandit
+safety
+sphinx
+autopep8
+black
