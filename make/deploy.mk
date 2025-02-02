@@ -64,7 +64,14 @@ quickpush: init-git
 			if ($$?) { \
 				git commit -m 'Quick update'; \
 				if ($$?) { \
-					git push; \
+					$$branch = git rev-parse --abbrev-ref HEAD; \
+					$$upstream = git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$$null; \
+					if ($$?) { \
+						git push; \
+					} else { \
+						Write-Host '[INFO] Configuration de la branche upstream...'; \
+						git push --set-upstream origin $$branch; \
+					} \
 					if ($$?) { \
 						Write-Host '[OK] Push effectue avec succes' \
 					} else { \
@@ -82,7 +89,14 @@ quickpush: init-git
 			$$ahead = git status -sb | Select-String -Pattern 'ahead'; \
 			if ($$ahead) { \
 				Write-Host '[INFO] Commits locaux detectes, push en cours...'; \
-				git push; \
+				$$branch = git rev-parse --abbrev-ref HEAD; \
+				$$upstream = git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$$null; \
+				if ($$?) { \
+					git push; \
+				} else { \
+					Write-Host '[INFO] Configuration de la branche upstream...'; \
+					git push --set-upstream origin $$branch; \
+				} \
 				if ($$?) { \
 					Write-Host '[OK] Push effectue avec succes' \
 				} else { \
