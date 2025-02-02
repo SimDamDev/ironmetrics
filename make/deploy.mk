@@ -53,7 +53,46 @@ panic: init-git
 quickpush: init-git
 	$(SEPARATOR)
 	$(INFO) Push rapide...
-	-$(GIT) add . && $(GIT) commit -m "Quick update" && $(GIT) push || $(WARNING) Erreur lors du push
+	@powershell -Command " \
+		Write-Host '[INFO] Verification des modifications...'; \
+		$$status = git status --porcelain; \
+		if ($$status) { \
+			Write-Host '[INFO] Modifications detectees :'; \
+			Write-Host $$status; \
+			Write-Host ''; \
+			git add .; \
+			if ($$?) { \
+				git commit -m 'Quick update'; \
+				if ($$?) { \
+					git push; \
+					if ($$?) { \
+						Write-Host '[OK] Push effectue avec succes' \
+					} else { \
+						Write-Host '[WARN] Erreur lors du push' \
+					} \
+				} else { \
+					Write-Host '[WARN] Erreur lors du commit' \
+				} \
+			} else { \
+				Write-Host '[WARN] Erreur lors du add' \
+			} \
+		} else { \
+			Write-Host '[INFO] Aucune modification detectee'; \
+			Write-Host '[INFO] Verification de commits non pousses...'; \
+			$$ahead = git status -sb | Select-String -Pattern 'ahead'; \
+			if ($$ahead) { \
+				Write-Host '[INFO] Commits locaux detectes, push en cours...'; \
+				git push; \
+				if ($$?) { \
+					Write-Host '[OK] Push effectue avec succes' \
+				} else { \
+					Write-Host '[WARN] Erreur lors du push' \
+				} \
+			} else { \
+				Write-Host '[INFO] Rien a pousser' \
+			} \
+		} \
+	" || $(WARNING) Erreur lors du push
 	$(SEPARATOR)
 
 # 🔑 Toggle Beta Mode
